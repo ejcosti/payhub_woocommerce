@@ -56,10 +56,10 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 
 			function __construct() { 
 				
-				$this->id				= 'payhub';
+				$this->id	= 'payhub';
 				$this->method_title 	= __('PayHub', 'woothemes');
-				$this->icon 			= WP_PLUGIN_URL . "/" . plugin_basename( dirname(__FILE__)) . '/PoweredbyPayHubCards.png';
-				$this->has_fields 		= true;
+				$this->icon = WP_PLUGIN_URL . "/" . plugin_basename( dirname(__FILE__)) . '/PoweredbyPayHubCards.png';
+				$this->has_fields = true;
 				
 				// Load the form fields
 				$this->init_form_fields();
@@ -176,51 +176,62 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 		     * Payment form on checkout page
 		     */
 			function payment_fields() {
+				if ( $description = $this->get_description() )
+					echo wpautop( wptexturize( $description ) );
+				if ( $this->supports( 'default_credit_card_form' ) )
+					echo $this->credit_card_form();
+
 				global $woocommerce;
-				?>
-				<?php if ($this->description) : ?><p><?php echo $this->description; ?></p><?php endif; ?>
 
-				<fieldset>
-					<p class="form-row form-row-first">
-						<label for="card_number"><?php echo __("Credit Card number", 'woocommerce') ?> <span class="required">*</span></label>
-						<input type="text" class="input-text" name="card_number" />
-					</p>
-					<div class="clear"></div>
-					<p class="form-row form-row-first">
-						<label for="cc_exp_month"><?php echo __("Expiration date", 'woocommerce') ?> <span class="required">*</span></label>
-						<select name="card_exp_month" id="cc_exp_month">
-							<option value=""><?php _e('Month', 'woocommerce') ?></option>
-							<?php
-								$months = array();
-								for ($i = 1; $i <= 12; $i++) {
-								    $timestamp = mktime(0, 0, 0, $i, 1);
-								    $months[date('m', $timestamp)] = date('F', $timestamp);
-								}
-								foreach ($months as $num => $name) {
-						            printf('<option value="%s">%s</option>', $num, $name);
-						        }
-						        
-							?>
-						</select>
-						<select name="card_exp_year" id="cc_exp_year">
-							<option value=""><?php _e('Year', 'woocommerce') ?></option>
-							<?php
-								$years = array();
-								for ($i = date('Y'); $i <= date('Y') + 15; $i++) {
-								    printf('<option value="%u">%u</option>', $i, $i);
-								}
-							?>
-						</select>
-					</p>
-					<p class="form-row form-row-last">
-						<label for="card_cvv"><?php _e("Card security code", 'woocommerce') ?> <span class="required">*</span></label>
-						<input type="text" class="input-text" id="cc_cvv" name="card_cvv" maxlength="4" style="width:45px" />
-						<span class="help payhub_card_cvv_description"></span>
-					</p>
-					<div class="clear"></div>
-				</fieldset>
+        $month_select = "";
+        for ($i=0; $i < 12; $i++){
+            $month = sprintf('%02d', $i+1);
+            if($month == date('m'))
+                $select = 'selected ';
+            else
+                $select = '';
+            $month_select .= "<option value='" . $month . "' " . $select . ">" . $month . "</option>\n";
+        }    
+        
+        // create options for valid from and expires on years
+        $year_now = date('y');
+        $year_select = "";
 
-				<?php
+        for($y = $year_now; $y < $year_now + 15; $y++){
+            $year = sprintf('%02d', $y);
+            $year_select .= "<option value='" . $year . "' " . $select . ">" . $year . "</option>\n";
+        }
+        ?>
+
+					<fieldset>
+						<p class="form-row form-row-first">
+							<label for="card_number"><?php echo __("Credit Card number", 'woocommerce') ?> <span class="required">*</span></label>
+							<input type="text" class="input-text" name="card_number" />
+						</p>
+						<div class="clear"></div>
+						<p class="form-row form-row-first">
+							<label for="cc_exp_month"><?php echo __("Expiration date", 'woocommerce') ?> <span class="required">*</span></label>
+							<select name="card_exp_month" id="cc_exp_month">
+								<?php echo $month_select; ?>
+							</select>
+							<select name="card_exp_year" id="cc_exp_year">
+								<?php echo $year_select; ?>
+							</select>
+						</p>
+						<p class="form-row form-row-last">
+							<label for="card_cvv"><?php _e("Card security code", 'woocommerce') ?> <span class="required">*</span></label>
+							<input type="text" class="input-text" id="cc_cvv" name="card_cvv" maxlength="4" style="width:45px" />
+							<span class="help payhub_card_cvv_description"></span>
+						</p>
+						<div class="clear"></div>
+					</fieldset>
+
+					<?php
+				
+				function supports( $feature ) {
+					return apply_filters( 'woocommerce_payment_gateway_supports', in_array( $feature, $this->supports) ? true : false, $feature, $this);
+				}
+
 			}
 
 
