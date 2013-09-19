@@ -3,7 +3,7 @@
 Plugin Name: WooCommerce PayHub Gateway Plugin
 Plugin URI: http://payhub.com/wiki
 Description: PayHub Inc. is a technology company that provides SAAS solutions and products that facilitate payment processing across a wide range of industries and devices.  We are a San Francisco Bay Area company, headquartered in San Rafael, California. We are a team of professionals with more than 35 years of combined electronic payment and financial industry and high tech expertise.
-Version: 1.0.6
+Version: 1.0.7
 Author: EJ
 
 */
@@ -15,7 +15,7 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 
 		if ( ! class_exists( 'WC_Payment_Gateway' ) ) { return; }
 
-		require_once(WP_PLUGIN_DIR . "/" . plugin_basename( dirname(__FILE__)) . '/class/payhubTransaction.class.php');
+		//require_once(WP_PLUGIN_DIR . "/" . plugin_basename( dirname(__FILE__)) . '/class/payhubTransaction.class.php');
 
 		/**
 	 	* Gateway class
@@ -45,6 +45,7 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 			var $api_username;
 			var $api_password;
 			var $orgid;
+			var $demo;
 			var $terminal_id;
 			var $card_data;
 			var $card_cvv;
@@ -69,6 +70,7 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 				// Get setting values
 				$this->title 			= $this->settings['title'];
 				$this->description 		= $this->settings['description'];
+				$this->demo = $this->settings['demo'];
 				$this->enabled 			= $this->settings['enabled'];
 				$this->api_username 	= $this->settings['api_username'];
 				$this->api_password 	= $this->settings['api_password'];
@@ -114,7 +116,14 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 								'type' => 'checkbox', 
 								'description' => '', 
 								'default' => 'no'
-							), 
+							),
+				'demo' => array(
+								'title' => __( 'PayHub Demo', 'woothemes' ), 
+								'label' => __( 'Enable Demo Mode', 'woothemes' ), 
+								'type' => 'checkbox',  
+								'description' => __('This turns on Demo Mode, where all transactions will go to our demo server.  While this mode is on, you can use any credit card number, but must use the following CVVs for the following card types.  VISA = 999, Mastercard = 998, AMEX = 9997, and Discover/Diners = 996', 'woothemes'), 
+								'default' => 'no'
+							),
 				'description' => array(
 								'title' => __( 'Description', 'woothemes' ), 
 								'type' => 'text', 
@@ -280,42 +289,72 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 			global $woocommerce;
 			$order = new WC_Order( $order_id );
 
-			try {
-				//set credentials for transaction
-				payhubTransaction::setCredentials($this->orgid, $this->api_username, $this->api_password);
-				payhubTransaction::setTerminalId($this->tid);
-				payhubTransaction::setDebug(true);
+			$mode = $this->demo;
+			$post_url = "https://checkout.payhub.com/invoice/transaction";
 
-				var_dump($order->billing_state);
-				
-				$wooresponse = payhubTransaction::sale(array(
-					"payment_type" => "credit",
-					"card_data_type" => "pan",
-					"card_data" => $_POST['card_number'],
-					"card_exp_month" => $_POST['card_exp_month'],
-					"card_exp_year" => $_POST['card_exp_year'],
-					"card_cvv" => $_POST['card_cvv'],
-					"amount" => $order->order_total,
-					"cust_first_name" => $order->billing_first_name,
-					"cust_last_name" => $order->billing_last_name,
-					"cust_email" => $order->billing_email,
-					"cust_phone" => $order->billing_phone,
-					"billing_address1" => $order->billing_address_1,
-					"billing_address2" => $order->billing_address_2,
-					"billing_city" => $order->billing_city,
-					"billing_state" => $order->billing_state,
-					"billing_zip" => $order->billing_postcode,
-					"note" => $order_id . ", " . $order->user_id
-				));
-  
+			if ($mode == "yes"){
+				$mode = "demo";
+			}else{
+				$mode = "live";
+			}
 
-				
-			} catch(Exception $error_message) {
-				}
+			$post_data = array(
+				'mode' => $mode,
+				'orgid' => $this->orgid,
+				'username' => $this->api_username,
+				'password' => $this->api_password,
+				'tid' => $this->tid,
+				'first_name' => $order->billing_first_name,
+				'last_name' => $order->billing_last_name,
+				'phone' => $order->billing_phone,
+				'email' => $order->billing_email,
+				'address1' => $order->billing_address_1,
+				'address2' => $order->billing_address_2,
+				'city' => $order->billing_city,
+				'state' => $order->billing_state,
+				'zip' => $order->billing_postcode,
+				'note' => $order_id . ", " . $order->user_id,
+				'cc' => $_POST['card_number'],
+				'month' => $_POST['card_exp_month'],
+				'year' => $_POST['card_exp_year'],
+				'cvv' => $_POST['card_cvv'],
+				'amount' => $order->order_total,
+				'ship_to_name' => $order->billing_first_name . $order->billing_last_name,
+				'ship_address1' => $order->shipping_address_1,
+				'ship_address2' => $order->shipping_address_2,
+				'ship_city' => $order->shipping_city,
+				'ship_state' => $order->shipping_state,
+				'ship_zip' => $order->shipping_postcode
+				);
 
-			if ($wooresponse->result_text == "SUCCESS") :
+		  $post_fields = json_encode($post_data);
+		  //var_dump($submit_data);
+		  //var_dump($post_url);
+		  // Setup the cURL request.
+		  $ch = curl_init();
+		  $c_opts = array(
+		  								CURLOPT_URL => $post_url,
+		                  CURLOPT_VERBOSE => 0,
+		                  CURLOPT_SSL_VERIFYHOST => 0,
+		                  CURLOPT_SSL_VERIFYPEER => false,
+		                  CURLOPT_CAINFO => "",
+		                  CURLOPT_HTTPHEADER => array('Content-Type: application/json'),
+		                  CURLOPT_RETURNTRANSFER => true,
+		                  CURLOPT_POST => true,
+		                  CURLOPT_POSTFIELDS => $post_fields);
 
-				$order->add_order_note( __('Transaction completed', 'woothemes') . ' (PayHub Transaction ID: ' . $wooresponse->transaction_id);
+		  curl_setopt_array($ch, $c_opts);
+		  $raw = curl_exec($ch);
+
+		  curl_close($ch);
+
+		  $wooresponse = json_decode($raw, true);
+
+			
+
+			if ($wooresponse['RESPONSE_TEXT'] == "SUCCESS") :
+
+				$order->add_order_note( __('Transaction completed', 'woothemes') . ' (PayHub Transaction ID: ' . $wooresponse['TRANSACTION_ID']);
 				
 				//$order->payment_complete();
 				$order->payment_complete();
@@ -335,10 +374,10 @@ add_action('plugins_loaded', 'woocommerce_payhub_init', 0);
 
 			else :
 				$order->update_status('failed');
-				$woocommerce->add_error(__('Payment Error:  ', 'woothemes') . $wooresponse->result_text);
-				$woocommerce->add_error(__('Payment Error:  ', 'woothemes') . $wooresponse->response_code);
-				$order->add_order_note( __('Transaction Failed', 'woothemes') . ' (PayHub Response Code: ' . $wooresponse->response_code);
-				$order->add_order_note( __('Transaction Failed', 'woothemes') . ' (Failed due to: ' . $wooresponse->result_text);
+				$woocommerce->add_error(__('Payment Error:  ', 'woothemes') . $wooresponse['RESPONSE_TEXT']);
+				$woocommerce->add_error(__('Payment Error:  ', 'woothemes') . $wooresponse['RESPONSE_CODE']);
+				$order->add_order_note( __('Transaction Failed', 'woothemes') . ' (PayHub Response Code: ' . $wooresponse['RESPONSE_CODE']);
+				$order->add_order_note( __('Transaction Failed', 'woothemes') . ' (Failed due to: ' . $wooresponse['RESPONSE_TEXT']);
 				return;
 			endif;
 
